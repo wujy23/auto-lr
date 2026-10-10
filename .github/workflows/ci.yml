@@ -1,0 +1,55 @@
+name: Offline tests and source bundle
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Offline tests (no model or Lightroom connection)
+        run: python -B -m unittest discover -s tests -v
+      - name: Build source bundle
+        run: python -B scripts/package_source.py
+      - name: Test the extracted release
+        shell: bash
+        run: |
+          python -B - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, sys, tempfile, zipfile
+          archive = pathlib.Path('dist/lightroom-harness-source.zip')
+          with tempfile.TemporaryDirectory(prefix='release space 测试 ') as tmp:
+              with zipfile.ZipFile(archive) as z:
+                  z.extractall(tmp)
+              root = pathlib.Path(tmp) / 'Codex-Auto-LR'
+              manifest = json.loads((root / 'SOURCE_MANIFEST.json').read_text())
+              for name, digest in manifest['files'].items():
+                  assert hashlib.sha256((root / name).read_bytes()).hexdigest() == digest, name
+              env = os.environ.copy()
+              env.pop('PYTHONPATH', None)
+              for command in [
+                  ['-m', 'unittest', 'discover', '-s', 'tests', '-v'],
+                  ['harness.py', '--help'],
+                  ['harness.py', 'library'],
+              ]:
+                  subprocess.run([sys.executable, '-B', *command], cwd=root, env=env, check=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-python-${{ matrix.python-version }}
+          path: |
+            dist/Codex-Auto-LR-*-source.zip
+            dist/Codex-Auto-LR-*-source.zip.sha256
