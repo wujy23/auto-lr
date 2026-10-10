@@ -9,6 +9,10 @@ from test_main import h, FakeAgents, FakeLR, fixed_goal, proposal, review
 
 class GoalTests(unittest.TestCase):
     def setUp(self):
+        # These tests inject fake agents; no installed Codex CLI is needed.
+        resolver = patch.object(h, 'resolve_codex', return_value='/fixture/codex')
+        resolver.start()
+        self.addCleanup(resolver.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         target = self.root / 'photo.raw'; target.touch()
